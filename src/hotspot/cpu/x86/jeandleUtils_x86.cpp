@@ -18,23 +18,22 @@
  *
  */
 
-#ifndef SHARE_JEANDLE_UTILS_HPP
-#define SHARE_JEANDLE_UTILS_HPP
+#include "llvm/IR/Jeandle/Attributes.h"
+#include "llvm/IR/Jeandle/GCStrategy.h"
 
-#include <cassert>
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Function.h"
+#include "jeandle/jeandleUtils.hpp"
 
-#include "utilities/debug.hpp"
-#include "ci/ciMethod.hpp"
+void JeandleFuncSig::setup_description(llvm::Function* func, bool is_stub) {
+  func->setCallingConv(llvm::CallingConv::Hotspot_JIT);
 
+  func->setGC(llvm::jeandle::JeandleGC);
 
-class JeandleFuncSig : public AllStatic {
- public:
-  // Create a llvm function according to the Java method.
-  static llvm::Function* create_llvm_func(ciMethod* method, llvm::Module& target_module);
-  static std::string method_name(ciMethod* method);
-  static void setup_description(llvm::Function* func, bool is_stub = false);
-};
+  if (!is_stub) {
+    func->addFnAttr("patchable-function-entry", "5");
+  }
+  func->addFnAttr(llvm::Attribute::NoCfCheck);
 
-#endif // SHARE_JEANDLE_UTILS_HPP
+  if (UseCompressedOops) {
+    func->addFnAttr(llvm::Attribute::get(func->getContext(), llvm::jeandle::Attribute::UseCompressedOops));
+  }
+}
