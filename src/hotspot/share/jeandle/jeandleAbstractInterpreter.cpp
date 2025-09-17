@@ -1271,7 +1271,7 @@ llvm::Value* JeandleAbstractInterpreter::find_or_insert_oop(ciObject* oop) {
 }
 
 // TODO: clinit_barrier check.
-// TODO: Handle field attributions like volatile, final, stable.
+// TODO: Handle field attributions like final, stable.
 void JeandleAbstractInterpreter::do_field_access(bool is_get, bool is_static) {
   bool will_link;
   ciField* field = _codes.get_field(will_link);
@@ -1304,7 +1304,8 @@ void JeandleAbstractInterpreter::do_get_xxx(ciField* field, bool is_static) {
     addr = compute_instance_field_address(_jvm->apop(), offset);
   }
 
-  llvm::Value* value = load_from_address(addr, field->layout_type());
+  bool is_volatile = field->is_volatile();
+  llvm::Value* value = load_from_address(addr, field->layout_type(), is_volatile);
   _jvm->push(field->type()->basic_type(), value);
 }
 
@@ -1320,7 +1321,8 @@ void JeandleAbstractInterpreter::do_put_xxx(ciField* field, bool is_static) {
     addr = compute_instance_field_address(_jvm->apop(), offset);
   }
 
-  store_to_address(addr, value, field->layout_type());
+  bool is_volatile = field->is_volatile();
+  store_to_address(addr, value, field->layout_type(), is_volatile);
 }
 
 llvm::Value* JeandleAbstractInterpreter::compute_instance_field_address(llvm::Value* obj, int offset) {
@@ -1336,16 +1338,31 @@ llvm::Value* JeandleAbstractInterpreter::compute_static_field_address(ciInstance
                                        _ir_builder.getInt64(offset));
 }
 
-llvm::Value* JeandleAbstractInterpreter::load_from_address(llvm::Value* addr, BasicType type) {
+llvm::Value* JeandleAbstractInterpreter::load_from_address(llvm::Value* addr, BasicType type, bool is_volatile) {
   llvm::Type* expected_ty = JeandleType::java2llvm(type, *_context);
-  return _ir_builder.CreateLoad(expected_ty, addr);
+
+  llvm::LoadInst* load_inst = _ir_builder.CreateLoad(expected_ty, addr);
+
+  if (is_volatile) {
+    load_inst->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
+  } else {
+    load_inst->setAtomic(llvm::AtomicOrdering::Unordered);
+  }
+
+  return load_inst;
 }
 
-void JeandleAbstractInterpreter::store_to_address(llvm::Value* addr, llvm::Value* value, BasicType type) {
+void JeandleAbstractInterpreter::store_to_address(llvm::Value* addr, llvm::Value* value, BasicType type, bool is_volatile) {
   llvm::Type* expected_ty = JeandleType::java2llvm(type, *_context);
   assert(value->getType() == expected_ty, "Value type must match field type");
 
-  llvm::StoreInst* store = _ir_builder.CreateStore(value, addr);
+  llvm::StoreInst* store_inst = _ir_builder.CreateStore(value, addr);
+
+  if (is_volatile) {
+    store_inst->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
+  } else {
+    store_inst->setAtomic(llvm::AtomicOrdering::Unordered);
+  }
 }
 
 void JeandleAbstractInterpreter::add_safepoint_poll() {
