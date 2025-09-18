@@ -178,6 +178,18 @@ void BasicBlockBuilder::generate_blocks() {
         break;
       }
 
+      case Bytecodes::_tableswitch: {
+        // Set block for each case.
+        Bytecode_tableswitch sw(&codes);
+        int length = sw.length();
+        for (int i = 0; i < length; i++) {
+          make_block_at(cur_bci + sw.dest_offset_at(i), current);
+        }
+        make_block_at(cur_bci + sw.default_offset(), current);
+        current = nullptr;
+        break;
+      }
+
       default:
         break;
     }
@@ -727,7 +739,7 @@ void JeandleAbstractInterpreter::interpret_block(JeandleBasicBlock* block) {
       case Bytecodes::_jsr: Unimplemented(); break;
       case Bytecodes::_ret: Unimplemented(); break;
 
-      case Bytecodes::_tableswitch: Unimplemented(); break;
+      case Bytecodes::_tableswitch: table_switch(); break;
       case Bytecodes::_lookupswitch: lookup_switch(); break;
 
       case Bytecodes::_ireturn: _ir_builder.CreateRet(_jvm->ipop()); break;
@@ -929,6 +941,23 @@ void JeandleAbstractInterpreter::lookup_switch() {
   for (int i = 0; i < length; i++) {
     LookupswitchPair pair = sw.pair_at(i);
     switch_inst->addCase(JeandleType::int_const(_ir_builder, pair.match()), bci2block()[cur_bci + pair.offset()]->llvm_block());
+  }
+}
+
+void JeandleAbstractInterpreter::table_switch() {
+  Bytecode_tableswitch sw(&_codes);
+
+  int length = sw.length();
+  int cur_bci = _codes.cur_bci();
+  int low = sw.low_key();
+
+  llvm::Value* idx = _jvm->ipop();
+  llvm::BasicBlock* default_block = bci2block()[cur_bci + sw.default_offset()]->llvm_block();
+  llvm::SwitchInst* switch_inst = _ir_builder.CreateSwitch(idx, default_block, length);
+
+  for (int i = 0; i < length; i++) {
+    llvm::BasicBlock* case_block = bci2block()[cur_bci + sw.dest_offset_at(i)]->llvm_block();
+    switch_inst->addCase(JeandleType::int_const(_ir_builder, i + low), case_block);
   }
 }
 

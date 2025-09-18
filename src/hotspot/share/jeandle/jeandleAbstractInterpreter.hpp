@@ -243,6 +243,7 @@ class JeandleAbstractInterpreter : public StackObj {
   void lcmp();
   void goto_bci(int bci);
   void lookup_switch();
+  void table_switch();
   void invoke();
   bool inline_intrinsic(const ciMethod* target);
   void stack_op(Bytecodes::Code code);
