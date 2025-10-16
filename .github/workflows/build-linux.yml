@@ -69,7 +69,7 @@ on:
 jobs:
   build-linux:
     name: build
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ fromJson(inputs.runs-on) }}
 
     strategy:
       fail-fast: false
