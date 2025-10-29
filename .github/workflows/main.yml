@@ -91,7 +91,7 @@ jobs:
     if: needs.prepare.outputs.linux-aarch64 == 'true'
 
   build-linux-aarch64-cross-compile:
-    name: linux-cross-compile
+    name: linux-aarch64-cross-compile
     needs: prepare
     uses: ./.github/workflows/build-cross-compile.yml
     with:
@@ -105,7 +105,7 @@ jobs:
     if: needs.prepare.outputs.linux-aarch64 == 'true'
 
   build-linux-riscv64-cross-compile:
-    name: linux-cross-compile
+    name: linux-riscv64-cross-compile
     needs: prepare
     uses: ./.github/workflows/build-cross-compile.yml
     with:
