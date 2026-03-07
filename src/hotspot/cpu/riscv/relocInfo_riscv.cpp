@@ -2,7 +2,7 @@
  * Copyright (c) 1998, 2023, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
- * Copyright (c) 2025, the Jeandle-JDK Authors. All Rights Reserved.
+ * Copyright (c) 2025, 2026, the Jeandle-JDK Authors. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -95,7 +95,63 @@ void Relocation::pd_set_call_destination(address x) {
 }
 
 void Relocation::pd_set_jeandle_data_value(address x, int addend, bool verify_only) {
-  Unimplemented();
+  assert(is_jeandle_reloc(), "unexpected reloc type: %d", type());
+  if (verify_only) {
+    return;
+  }
+
+  if (addr_in_const()) {
+    assert(type() == relocInfo::jeandle_section_word_type, "Wrong relocation type");
+    auto actual_relocation = (jeandle_section_word_Relocation *) this;
+    int section = actual_relocation->section();
+    int64_t rel_offset = actual_relocation->rel_offset();
+    if (section == CodeBuffer::SECT_INSTS) {
+      int new_offset = static_cast<int32_t>((int64_t)x & 0x7fffffff) - static_cast<int32_t>(rel_offset & 0x7fffffff) + addend;
+      *(int*)addr() = *(int*)addr() + new_offset;
+      actual_relocation->set_rel_offset((int64_t)x);
+    } else {
+      assert(section == CodeBuffer::SECT_CONSTS, "Wrong relocation section");
+      int new_offset = static_cast<int32_t>(rel_offset & 0x7fffffff) - static_cast<int32_t>((int64_t)x & 0x7fffffff) - addend;
+      *(int*)addr() = *(int*)addr() + new_offset;
+      actual_relocation->set_rel_offset((int64_t)x);
+    }
+    return;
+  }
+
+  int64_t rel_offset = 0;
+  if (type() == relocInfo::jeandle_section_word_type) {
+    auto actual_relocation = (jeandle_section_word_Relocation *) this;
+    rel_offset = actual_relocation->rel_offset();
+  } else if (type() == relocInfo::jeandle_oop_type) {
+    auto actual_relocation = (jeandle_oop_Relocation *) this;
+    rel_offset = actual_relocation->rel_offset();
+  } else {
+    assert(type() == relocInfo::jeandle_oop_addr_type, "unexpected reloc type: %d", type());
+    auto actual_relocation = (jeandle_oop_addr_Relocation *) this;
+    rel_offset = actual_relocation->rel_offset();
+  }
+
+  // Handle the following three cases. Please note that load/float_load/addi may be not
+  // followed by auipc immediately, so we need to identify and handle them separately.
+  // 1. auipc + load
+  // 2. auipc + float_load
+  // 3. auipc + addi
+  address insn_addr = addr();
+  ptrdiff_t offset = (ptrdiff_t)((uintptr_t)x - (uintptr_t)insn_addr + addend) + rel_offset;
+  if (NativeInstruction::is_auipc_at(insn_addr)) {
+    Assembler::patch(insn_addr, 31, 12, ((offset + 0x800) >> 12) & 0xfffff);
+  } else if (NativeInstruction::is_ld_at(insn_addr)) {
+    Assembler::patch(insn_addr, 31, 20, offset & 0xfff);
+  } else if (NativeInstruction::is_float_load_at(insn_addr)) {
+    Assembler::patch(insn_addr, 31, 20, offset & 0xfff);
+  } else if (NativeInstruction::is_addi_at(insn_addr)) {
+    Assembler::patch(insn_addr, 31, 20, offset & 0xfff);
+  } else {
+    tty->print_cr("instruction 0x%x at " INTPTR_FORMAT " could not be patched.",
+                  Assembler::ld_instr(insn_addr), p2i(insn_addr));
+    ShouldNotReachHere();
+  }
+  ICache::invalidate_range(insn_addr, NativeInstruction::instruction_size);
 }
 
 address* Relocation::pd_address_in_code() {
@@ -119,10 +175,20 @@ void metadata_Relocation::pd_fix_value(address x) {
 
 #ifdef JEANDLE
 void trampoline_stub_Relocation::pd_fix_owner_after_move() {
-  Unimplemented();
+  NativeCall* call = nativeCall_at(owner());
+  address trampoline = addr();
+  address dest = nativeCallTrampolineStub_at(trampoline)->destination();
+  if (!Assembler::reachable_from_branch_at(owner(), dest)) {
+    dest = trampoline;
+  }
+  call->set_destination(dest);
 }
 #endif // JEANDLE
 
 void jeandle_oop_addr_Relocation::fix_relocation_after_move(const CodeBuffer* src, CodeBuffer* dest) {
-  Unimplemented();
+  assert(addr_in_const(), "must in const section");
+  address old_addr = *(address*)addr();
+  int delta = dest - src;
+  address new_addr = old_addr + delta;
+  set_value(new_addr);
 }
