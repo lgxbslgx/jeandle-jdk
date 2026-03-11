@@ -126,6 +126,8 @@ bool JeandleVMState::update_phi_nodes(JeandleVMState* income_jvm, llvm::BasicBlo
     llvm::PHINode* phi_node = llvm::cast<llvm::PHINode>(_locals[i].value());
 
     if (income_locals[i].is_null() || phi_node->getType() != income_locals[i].value()->getType()) {
+      assert(phi_node->use_empty(), "cannot use invalid local variable");
+      phi_node->eraseFromParent();
       invalidate_local(i);
       continue;
     }
@@ -291,17 +293,15 @@ bool JeandleBasicBlock::merge_VM_state_from(JeandleVMState* vm_state, llvm::Basi
       initialize_VM_state_from(vm_state, incoming, method->liveness_at_bci(_start_bci));
     }
 
-    if (is_set(is_loop_header)) {
-      // Copy loop header's initial JeandleVMState.
-      _initial_jvm = _jvm->copy();
-    }
-
     return true;
 
   } else if (!is_set(is_compiled) && !is_set(is_loop_header)) {
     assert(_predecessors.size() > 1 || is_exception_handler(), "more than one predecessors are needed for phi nodes");
     return _jvm->update_phi_nodes(vm_state, incoming);
   } else if (is_set(is_loop_header)) {
+    if (!is_set(is_compiled)) {
+      return _jvm->update_phi_nodes(vm_state, incoming);
+    }
     assert(_initial_jvm != nullptr, "loop header initial JeandleVMState is needed");
     return _initial_jvm->update_phi_nodes(vm_state, incoming);
   }
@@ -704,6 +704,11 @@ void JeandleAbstractInterpreter::interpret_block(JeandleBasicBlock* block) {
   // Skip blocks that are unreachable.
   if (_jvm == nullptr) {
     return;
+  }
+
+  if (block->is_set(JeandleBasicBlock::is_loop_header)) {
+    // Copy loop header's initial JeandleVMState.
+    block->set_initial_jvm(_jvm->copy());
   }
 
   _bytecodes.reset_to_bci(block->start_bci());
@@ -1444,7 +1449,7 @@ void JeandleAbstractInterpreter::invoke() {
 
   // Record this call.
   uint32_t id = _compiled_code.next_statepoint_id();
-  _compiled_code.push_non_routine_call_site(new CallSiteInfo(call_type, dest, _bytecodes.cur_bci(), true /* _has_deopt_operands */, id));
+  _compiled_code.push_non_routine_call_site(new CallSiteInfo(call_type, dest, _bytecodes.cur_bci(), id));
 
   // Every invoke instruction may throw exceptions, handle them here.
   DispatchedDest dispatched = dispatch_exception_for_invoke();
@@ -1870,10 +1875,10 @@ void JeandleAbstractInterpreter::arith_op(BasicType type, Bytecodes::Code code) 
 }
 
 // Call a Java operation, without exception handling.
-llvm::CallInst* JeandleAbstractInterpreter::call_java_op(llvm::StringRef java_op, llvm::ArrayRef<llvm::Value*> args) {
+llvm::CallInst* JeandleAbstractInterpreter::call_java_op(llvm::StringRef java_op, llvm::ArrayRef<llvm::Value*> args, llvm::ArrayRef<llvm::OperandBundleDef> deopt_bundle ) {
   llvm::Function* java_op_func = _module.getFunction(java_op);
   assert(java_op_func != nullptr, "invalid JavaOp");
-  llvm::CallInst* call_inst = create_call(java_op_func, args, llvm::CallingConv::Hotspot_JIT);
+  llvm::CallInst* call_inst = create_call(java_op_func, args, llvm::CallingConv::Hotspot_JIT, deopt_bundle);
   return call_inst;
 }
 
@@ -2057,7 +2062,8 @@ void JeandleAbstractInterpreter::store_to_address(llvm::Value* addr, llvm::Value
 }
 
 void JeandleAbstractInterpreter::add_safepoint_poll() {
-  call_java_op("jeandle.safepoint_poll", {});
+  llvm::OperandBundleDef deopt_bundle("deopt", _jvm->deopt_args(_ir_builder, _bytecodes.cur_bci()));
+  call_java_op("jeandle.safepoint_poll", {}, {deopt_bundle});
 }
 
 void JeandleAbstractInterpreter::arraylength() {
