@@ -127,6 +127,8 @@ class JeandleVMState : public JeandleCompilationResourceObj {
   LockValue lock_at(int index) { return _locks[index]; }
 
   llvm::SmallVector<llvm::Value*> deopt_args(llvm::IRBuilder<> &builder, int bci);
+
+  int interpreter_frame_size_in_bytes();
  private:
   llvm::SmallVector<TypedValue> _stack;
   llvm::SmallVector<TypedValue> _locals;
@@ -313,14 +315,20 @@ class JeandleAbstractInterpreter : public StackObj {
   llvm::CallInst*   call_java_op(llvm::StringRef java_op, 
                                  llvm::ArrayRef<llvm::Value*> args,
                                  llvm::ArrayRef<llvm::OperandBundleDef> deopt_bundle = {});
-  llvm::InvokeInst* call_java_op_ex(llvm::StringRef java_op, llvm::ArrayRef<llvm::Value*> args);
+  llvm::InvokeInst* call_java_op_ex(llvm::StringRef java_op, llvm::ArrayRef<llvm::Value*> args,
+                                    llvm::ArrayRef<llvm::OperandBundleDef> deopt_bundle = {});
   llvm::CallInst*   create_call(llvm::FunctionCallee callee,
                                 llvm::ArrayRef<llvm::Value*> arg,
                                 llvm::CallingConv::ID calling_conv,
                                 llvm::ArrayRef<llvm::OperandBundleDef> deopt_bundle = {});
   llvm::InvokeInst* create_call_ex(llvm::FunctionCallee callee,
                                    llvm::ArrayRef<llvm::Value*> arg,
-                                   llvm::CallingConv::ID calling_conv);
+                                   llvm::CallingConv::ID calling_conv,
+                                   llvm::ArrayRef<llvm::OperandBundleDef> deopt_bundle = {});
+
+  llvm::OperandBundleDef create_current_deopt_bundle() {
+    return llvm::OperandBundleDef("deopt", _jvm->deopt_args(_ir_builder, _bytecodes.cur_bci()));
+  }
 
   void add_safepoint_poll();
 

@@ -175,7 +175,7 @@ declare hotspotcc ptr addrspace(1) @new_array(ptr, i32, ptr)
 define private hotspotcc ptr addrspace(1) @jeandle.newarray(ptr %array_klass, i32 %length) noinline "lower-phase"="0"  {
 entry:
   %current_thread = call hotspotcc ptr @jeandle.current_thread()
-  %array_oop = call hotspotcc ptr addrspace(1) @new_array(ptr %array_klass, i32 %length, ptr %current_thread)
+  %array_oop = call hotspotcc ptr addrspace(1) @new_array(ptr %array_klass, i32 %length, ptr %current_thread) [ "deopt"() ]
   ret ptr addrspace(1) %array_oop
 }
 

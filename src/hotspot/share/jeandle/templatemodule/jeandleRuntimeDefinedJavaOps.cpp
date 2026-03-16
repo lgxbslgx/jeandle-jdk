@@ -57,6 +57,12 @@
 
 namespace {
 
+// We cannot obtain contexts such as BCI in DEF_JAVA_OP. 
+// But we can pass the external deopt bundle into this empty one via inlining.
+llvm::OperandBundleDef create_empty_deopt_bundle() {
+  return llvm::OperandBundleDef("deopt", llvm::SmallVector<llvm::Value*>{});
+}
+
 DEF_JAVA_OP(current_thread, 0, llvm::PointerType::get(context, llvm::jeandle::AddrSpace::CHeapAddrSpace))
   llvm::NamedMDNode* thread_register = template_module.getNamedMetadata(llvm::jeandle::Metadata::CurrentThread);
   assert(thread_register != nullptr, "current_thread metadata must exist");
@@ -98,8 +104,8 @@ DEF_JAVA_OP(safepoint_poll, 1, llvm::Type::getVoidTy(context))
   llvm::CallInst* current_thread = ir_builder.CreateCall(current_thread_func);
   current_thread->setCallingConv(llvm::CallingConv::Hotspot_JIT);
   // Call safepoint handler.
-  llvm::OperandBundleDef deopt_bundle("deopt", llvm::SmallVector<llvm::Value*>{});
-  llvm::CallInst* call_inst = ir_builder.CreateCall(JeandleRuntimeRoutine::safepoint_handler_callee(template_module), {current_thread}, {deopt_bundle});
+  llvm::CallInst* call_inst = ir_builder.CreateCall(JeandleRuntimeRoutine::safepoint_handler_callee(template_module), {current_thread},
+                                                    {create_empty_deopt_bundle()});
   call_inst->setCallingConv(llvm::CallingConv::Hotspot_JIT);
   ir_builder.CreateBr(return_block);
 
@@ -165,7 +171,8 @@ DEF_JAVA_OP(new_instance, 1, llvm::PointerType::get(context, llvm::jeandle::Addr
   current_thread->setCallingConv(llvm::CallingConv::Hotspot_JIT);
 
   // slow path allocation, TODO: implement fast path allocation
-  llvm::CallInst* call_inst = ir_builder.CreateCall(JeandleRuntimeRoutine::new_instance_callee(template_module), {klass, current_thread});
+  llvm::CallInst* call_inst = ir_builder.CreateCall(JeandleRuntimeRoutine::new_instance_callee(template_module), {klass, current_thread},
+                                                    {create_empty_deopt_bundle()});
   call_inst->setCallingConv(llvm::CallingConv::Hotspot_JIT);
 
   ir_builder.CreateRet(call_inst);
