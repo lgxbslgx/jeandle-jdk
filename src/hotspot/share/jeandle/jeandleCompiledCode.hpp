@@ -270,6 +270,7 @@ class JeandleCompiledCode : public StackObj {
                               const StackMapParser::LocationAccessor& lock, GrowableArray<MonitorValue*>* array);
 
   void build_exception_handler_table();
+  bool pd_build_exception_handler_table();
   void build_implicit_exception_table();
 
   int frame_size_in_slots();

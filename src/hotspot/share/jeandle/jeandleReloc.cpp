@@ -128,13 +128,19 @@ void JeandleCallReloc::process_stack_map() {
   recorder->end_safepoint(inst_end_offset());
 }
 
-#ifndef RISCV
+void JeandleSectionWordReloc::emit_reloc(JeandleAssembler &assembler) {
+  if (pd_emit_reloc(assembler)) {
+    return;
+  }
 
-void JeandleSectionWordReloc::emit_reloc(JeandleAssembler& assembler) {
   assembler.emit_section_word_reloc(offset(), _kind, _addend, _target, _reloc_section);
 }
 
 void JeandleSectionWordReloc::fixup_offset(int prolog_length) {
+  if (pd_fixup_offset(prolog_length)) {
+    return;
+  }
+
   if (_reloc_section == CodeBuffer::SECT_INSTS) {
     _offset += prolog_length;
   } else {
@@ -147,41 +153,17 @@ void JeandleSectionWordReloc::fixup_offset(int prolog_length) {
 }
 
 void JeandleOopReloc::emit_reloc(JeandleAssembler& assembler) {
+  if (pd_emit_reloc(assembler)) {
+    return;
+  }
+
   assembler.emit_oop_reloc(offset(), _oop_handle, _addend);
 }
 
 void JeandleOopAddrReloc::emit_reloc(JeandleAssembler& assembler) {
+  if (pd_emit_reloc(assembler)) {
+    return;
+  }
+
   assembler.emit_oop_addr_reloc(offset(), _oop_handle);
 }
-
-#else
-
-void JeandleSectionWordReloc::emit_reloc(JeandleAssembler &assembler) {
-  assembler.emit_section_word_reloc(offset(), _kind, _addend, _target, _reloc_section, _rel_offset);
-}
-
-void JeandleSectionWordReloc::fixup_offset(int prolog_length) {
-  if (_reloc_section == CodeBuffer::SECT_INSTS) {
-    _offset += prolog_length;
-  } else if (_reloc_section == CodeBuffer::SECT_CONSTS &&
-             _kind == llvm::jitlink::riscv::EdgeKind_riscv::R_RISCV_ADD32) {
-    _target += prolog_length;
-  } else {
-    assert(_reloc_section == CodeBuffer::SECT_CONSTS, "unexpected code section");
-    assert(_kind == llvm::jitlink::riscv::EdgeKind_riscv::R_RISCV_SUB32, "unexpected link kind");
-    // do nothing here.
-  }
-#ifdef ASSERT
-  _fixed_up = true;
-#endif
-}
-
-void JeandleOopReloc::emit_reloc(JeandleAssembler &assembler) {
-  assembler.emit_oop_reloc(offset(), _oop_handle, _addend, _rel_offset);
-}
-
-void JeandleOopAddrReloc::emit_reloc(JeandleAssembler &assembler) {
-  assembler.emit_oop_addr_reloc(offset(), _oop_handle, _rel_offset);
-}
-
-#endif

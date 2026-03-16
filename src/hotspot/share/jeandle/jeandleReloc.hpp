@@ -100,8 +100,10 @@ public:
       _reloc_section(reloc_section) {}
 
   void emit_reloc(JeandleAssembler& assembler) override;
+  bool pd_emit_reloc(JeandleAssembler& assembler);
 
   void fixup_offset(int prolog_length) override;
+  bool pd_fixup_offset(int prolog_length);
 
 private:
   LinkKind _kind;
@@ -120,6 +122,7 @@ class JeandleOopReloc : public JeandleReloc {
       _addend(addend) {}
 
   void emit_reloc(JeandleAssembler& assembler) override;
+  bool pd_emit_reloc(JeandleAssembler& assembler);
 
  private:
   jobject _oop_handle;
@@ -135,6 +138,7 @@ class JeandleOopAddrReloc : public JeandleReloc {
       _oop_handle(oop_handle) {}
 
   void emit_reloc(JeandleAssembler& assembler) override;
+  bool pd_emit_reloc(JeandleAssembler& assembler);
 
   void fixup_offset(int prolog_length) override {
     // This relocation resides in the const section, so the offset does not

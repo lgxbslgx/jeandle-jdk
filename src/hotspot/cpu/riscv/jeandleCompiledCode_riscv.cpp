@@ -43,7 +43,7 @@ void JeandleCompiledCode::setup_frame_size() {
   _frame_size = frame_size_in_bytes / BytesPerWord;
 }
 
-void JeandleCompiledCode::build_exception_handler_table() {
+bool JeandleCompiledCode::pd_build_exception_handler_table() {
   SectionInfo excpet_table_section(".gcc_except_table");
   if (ReadELF::findSection(*_elf, excpet_table_section)) {
     // Start of the exception handler table.
@@ -89,6 +89,7 @@ void JeandleCompiledCode::build_exception_handler_table() {
       assert(data_cursor, "invalid exception handler action table entry");
     }
   }
+  return true;
 }
 
 bool JeandleCompiledCode::pd_resolve_reloc(JeandleAssembler& assembler,
