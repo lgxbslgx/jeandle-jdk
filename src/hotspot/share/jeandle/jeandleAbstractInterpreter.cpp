@@ -657,6 +657,15 @@ void JeandleAbstractInterpreter::interpret() {
   if (_method && _method->is_synchronized()) {
     JeandleCompilation::current()->set_has_monitors(true);
     _jvm = _block_builder->entry_block()->VM_state();
+    _block = _block_builder->entry_block();
+
+    // Strictly reserve 'entry' for allocas to ensure static stack allocation.
+    // This prevents dynamic RSP adjustments and ensures valid StackMap generation for GC.
+    llvm::BasicBlock* sync_method_lock = llvm::BasicBlock::Create(*_context, "sync_method_lock", _llvm_func);
+    _ir_builder.CreateBr(sync_method_lock);
+    _ir_builder.SetInsertPoint(sync_method_lock);
+    _block->set_tail_llvm_block(sync_method_lock);
+
     // Setup Object Pointer
     llvm::Value* lock_obj = nullptr;
     if (_method->is_static()) {
@@ -667,8 +676,11 @@ void JeandleAbstractInterpreter::interpret() {
       lock_obj = _jvm->locals_at(0);
     }
 
-    llvm::Value* lock = _ir_builder.CreateAlloca(_ir_builder.getIntPtrTy(_module.getDataLayout()),
-                                                 llvm::jeandle::AddrSpace::CHeapAddrSpace, nullptr, "BasicLock");
+    // Allocate a BasicLock on stack.
+    // Alloca insts should be in the entry block to be 'StaticAlloca'. Then they could be folded into prologue code.
+    llvm::IRBuilder entry_block_ir_builder(_block_builder->entry_block()->header_llvm_block()->getTerminator());
+    llvm::Value* lock = entry_block_ir_builder.CreateAlloca(_ir_builder.getIntPtrTy(_module.getDataLayout()),
+                                                            llvm::jeandle::AddrSpace::CHeapAddrSpace, nullptr, "BasicLock");
     // record object and lock for synchronized method
     TypedValue obj(BasicType::T_OBJECT, lock_obj);
     _sync_lock.set_object(obj);
@@ -2547,6 +2559,7 @@ void JeandleAbstractInterpreter::multianewarray() {
 
 void JeandleAbstractInterpreter::shared_lock(LockValue lock) {
   assert(lock.object().value() != nullptr, "sanity");
+  assert(_block != nullptr, "sanity");
 
   if (lock.lock() == nullptr) {
     // Allocate a BasicLock on stack.
@@ -2558,18 +2571,70 @@ void JeandleAbstractInterpreter::shared_lock(LockValue lock) {
 
   _jvm->push_lock(lock);
 
+  int cur_bci = _bytecodes.cur_bcp() == nullptr ? -1 : _bytecodes.cur_bci();
+
+  llvm::BasicBlock* monitorenter_slow_path = llvm::BasicBlock::Create(*_context, "bci_" + std::to_string(cur_bci) + "_monitorenter_slow_path", _llvm_func);
+  llvm::BasicBlock* monitor_entered = llvm::BasicBlock::Create(*_context, "bci_" + std::to_string(cur_bci) + "_monitor_entered", _llvm_func);
+
+  if (DiagnoseSyncOnValueBasedClasses != 0) {
+    llvm::BasicBlock* not_value_based = llvm::BasicBlock::Create(*_context, "bci_" + std::to_string(cur_bci) + "_not_value_based", _llvm_func);
+    llvm::CallInst* check = call_java_op("jeandle.check_if_value_based", {lock.object().value()});
+    _ir_builder.CreateCondBr(check, monitorenter_slow_path, not_value_based);
+
+    _ir_builder.SetInsertPoint(not_value_based);
+  }
+
+  llvm::CallInst* call;
+  if (LockingMode == LM_MONITOR) {
+    call = call_java_op("jeandle.monitorenter_with_monitor_lock", {lock.object().value(), lock.lock()});
+  } else if (LockingMode == LM_LEGACY) {
+    call = call_java_op("jeandle.monitorenter_with_thin_lock", {lock.object().value(), lock.lock()});
+  } else {
+    assert(LockingMode == LM_LIGHTWEIGHT, "");
+    call = call_java_op("jeandle.monitorenter_with_lightweight_lock", {lock.object().value(), lock.lock()});
+  }
+  _ir_builder.CreateCondBr(call, monitor_entered, monitorenter_slow_path);
+
+  _ir_builder.SetInsertPoint(monitorenter_slow_path);
+
   llvm::FunctionCallee monitorenter_callee = JeandleRuntimeRoutine::SharedRuntime_complete_monitor_locking_C_callee(_module);
   llvm::CallInst* current_thread = call_java_op("jeandle.current_thread", {});
   llvm::CallInst* call_monitorenter = _ir_builder.CreateCall(monitorenter_callee, {lock.object().value(), lock.lock(), current_thread});
   call_monitorenter->setCallingConv(llvm::CallingConv::Hotspot_JIT);
+  _ir_builder.CreateBr(monitor_entered);
+
+  _ir_builder.SetInsertPoint(monitor_entered);
+  _block->set_tail_llvm_block(monitor_entered);
 }
 
 void JeandleAbstractInterpreter::shared_unlock(LockValue lock) {
   assert(!lock.is_null(), "sanity");
+
+  int cur_bci = _bytecodes.cur_bci();
+
+  llvm::BasicBlock* monitorexit_slow_path = llvm::BasicBlock::Create(*_context, "bci_" + std::to_string(cur_bci) + "_monitorexit_slow_path", _llvm_func);
+  llvm::BasicBlock* monitor_exited = llvm::BasicBlock::Create(*_context, "bci_" + std::to_string(cur_bci) + "_monitor_exited", _llvm_func);
+
+  llvm::CallInst* call;
+  if (LockingMode == LM_MONITOR) {
+    call = call_java_op("jeandle.monitorexit_with_monitor_lock", {lock.object().value(), lock.lock()});
+  } else if (LockingMode == LM_LEGACY) {
+    call = call_java_op("jeandle.monitorexit_with_thin_lock", {lock.object().value(), lock.lock()});
+  } else {
+    assert(LockingMode == LM_LIGHTWEIGHT, "");
+    call = call_java_op("jeandle.monitorexit_with_lightweight_lock", {lock.object().value(), lock.lock()});
+  }
+  _ir_builder.CreateCondBr(call, monitor_exited, monitorexit_slow_path);
+
+  _ir_builder.SetInsertPoint(monitorexit_slow_path);
   llvm::FunctionCallee monitorexit_callee = JeandleRuntimeRoutine::SharedRuntime_complete_monitor_unlocking_C_callee(_module);
   llvm::CallInst* current_thread = call_java_op("jeandle.current_thread", {});
   llvm::CallInst* call_monitorexit = _ir_builder.CreateCall(monitorexit_callee, {lock.object().value(), lock.lock(), current_thread});
   call_monitorexit->setCallingConv(llvm::CallingConv::C);
+  _ir_builder.CreateBr(monitor_exited);
+
+  _ir_builder.SetInsertPoint(monitor_exited);
+  _block->set_tail_llvm_block(monitor_exited);
 }
 
 void JeandleAbstractInterpreter::monitorenter() {
@@ -2658,7 +2723,44 @@ void JeandleAbstractInterpreter::boundary_check(llvm::Value* array_oop, llvm::Va
   _block->set_tail_llvm_block(boundary_check_pass);
 }
 
+void JeandleAbstractInterpreter::call_register_finalizer() {
+  llvm::Value* receiver = _jvm->locals_at(0);
+  assert(receiver != nullptr, "must have a receiver");
+
+  // TODO: know statically that registration isn't required
+
+  // dynamic test for whether the instance needs finalization  
+  llvm::Value* klass_offset = llvm::ConstantInt::get(_ir_builder.getInt32Ty(), (uint64_t)oopDesc::klass_offset_in_bytes());
+  llvm::Value* klass_addr = _ir_builder.CreateInBoundsGEP(llvm::Type::getInt8Ty(*_context), receiver, klass_offset);
+  llvm::Value* klass = _ir_builder.CreateLoad(_ir_builder.getPtrTy(), klass_addr);
+  
+  llvm::Value* access_flags_offset = llvm::ConstantInt::get(_ir_builder.getInt32Ty(), (uint64_t)in_bytes(Klass::access_flags_offset()));
+  llvm::Value* access_flags_addr = _ir_builder.CreateInBoundsGEP(llvm::Type::getInt8Ty(*_context), klass, access_flags_offset);
+  llvm::Value* access_flags = _ir_builder.CreateLoad(_ir_builder.getInt32Ty(), access_flags_addr);
+  
+  llvm::Value* mask = _ir_builder.CreateAnd(access_flags, llvm::ConstantInt::get(_ir_builder.getInt32Ty(), JVM_ACC_HAS_FINALIZER));
+  llvm::Value* check = _ir_builder.CreateICmpNE(mask, llvm::ConstantInt::get(_ir_builder.getInt32Ty(), 0));
+  
+  llvm::BasicBlock* register_block = llvm::BasicBlock::Create(*_context, "register_finalizer", _llvm_func);
+  llvm::BasicBlock* skip_block = llvm::BasicBlock::Create(*_context, "skip_register_finalizer", _llvm_func);  
+  _ir_builder.CreateCondBr(check, register_block, skip_block);
+  
+  _ir_builder.SetInsertPoint(register_block);
+  llvm::CallInst* current_thread = call_java_op("jeandle.current_thread", {});
+  create_call(JeandleRuntimeRoutine::SharedRuntime_register_finalizer_callee(_module), {current_thread, receiver}, llvm::CallingConv::Hotspot_JIT);
+  _ir_builder.CreateBr(skip_block);
+  
+  _ir_builder.SetInsertPoint(skip_block);
+  _block->set_tail_llvm_block(skip_block);
+}
+
 void JeandleAbstractInterpreter::return_current(llvm::Value* value) {
+  if (RegisterFinalizersAtInit &&
+      _method &&
+      _method->intrinsic_id() == vmIntrinsics::_Object_init) {
+    call_register_finalizer();
+  }
+
   if (_method && _method->is_synchronized()) {
     LockValue lock = _jvm->pop_lock();
     assert(lock.equals(_sync_lock), "sanity");
