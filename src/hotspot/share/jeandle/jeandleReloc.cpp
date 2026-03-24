@@ -31,11 +31,6 @@
 #include "jeandle/jeandleRuntimeRoutine.hpp"
 #include "jeandle/jeandleReloc.hpp"
 
-using LinkBlock = llvm::jitlink::Block;
-using LinkEdge = llvm::jitlink::Edge;
-using LinkKind = llvm::jitlink::Edge::Kind;
-using LinkSymbol = llvm::jitlink::Symbol;
-
 void* JeandleReloc::operator new(size_t size) throw() {
   return JeandleCompilation::current()->arena()->Amalloc(size);
 }

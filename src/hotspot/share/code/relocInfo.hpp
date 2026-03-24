@@ -488,6 +488,8 @@ class RelocationHolder {
   // _reloc member to capture the result of the placement new, and use that to
   // access the base subobject.
 #if (defined(JEANDLE) && defined(RISCV64))
+  // RISCV64 needs more space for the field `_rel_offset` of `jeandle_oop_Relocation`,
+  // `jeandle_oop_addr_Relocation` and `jeandle_section_word_Relocation`.
   static const size_t _relocbuf_size = 6 * sizeof(void*);
 #else
   static const size_t _relocbuf_size = 5 * sizeof(void*);
