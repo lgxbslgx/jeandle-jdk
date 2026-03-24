@@ -192,3 +192,126 @@ void jeandle_oop_addr_Relocation::fix_relocation_after_move(const CodeBuffer* sr
   address new_addr = old_addr + delta;
   set_value(new_addr);
 }
+
+// TODO Pack(compress) the fields of jeandle_oop_Relocation
+bool jeandle_oop_Relocation::pd_pack_data_to(CodeSection* dest) {
+  int32_t hi, lo;
+  short* p = (short*) dest->locs_end();
+  // store _oop_index
+  p = add_jint(p, _oop_index);
+  // store _offset
+  p = add_jint(p, _offset);
+  // store _rel_offset
+  hi = high(_rel_offset);
+  lo = low(_rel_offset);
+  p = add_jint(p, hi);
+  p = add_jint(p, lo);
+  dest->set_locs_end((relocInfo*) p);
+  return true;
+}
+
+bool jeandle_oop_Relocation::pd_unpack_data() {
+  jint lo, hi;
+  int    dlen = datalen();
+  short* dp  = data();
+  // recover _oop_index
+  _oop_index = relocInfo::jint_data_at(0, dp, dlen);
+  // recover _offset
+  _offset = relocInfo::jint_data_at(2, dp, dlen);
+  // recover _rel_offset
+  hi = relocInfo::jint_data_at(4, dp, dlen);
+  lo = relocInfo::jint_data_at(6, dp, dlen);
+  _rel_offset = jlong_from(hi, lo);
+  return true;
+}
+
+// TODO Pack(compress) the fields of jeandle_oop_addr_Relocation
+bool jeandle_oop_addr_Relocation::pd_pack_data_to(CodeSection* dest) {
+  int32_t hi, lo;
+  short* p = (short*) dest->locs_end();
+  // store _oop_index
+  p = add_jint(p, _oop_index);
+  // store _offset
+  p = add_jint(p, _offset);
+  // store _rel_offset
+  hi = high(_rel_offset);
+  lo = low(_rel_offset);
+  p = add_jint(p, hi);
+  p = add_jint(p, lo);
+  dest->set_locs_end((relocInfo*) p);
+  return true;
+}
+
+bool jeandle_oop_addr_Relocation::pd_unpack_data() {
+  jint lo, hi;
+  int    dlen = datalen();
+  short* dp  = data();
+  // recover _oop_index
+  _oop_index = relocInfo::jint_data_at(0, dp, dlen);
+  // recover _offset
+  _offset = relocInfo::jint_data_at(2, dp, dlen);
+  // recover _rel_offset
+  hi = relocInfo::jint_data_at(4, dp, dlen);
+  lo = relocInfo::jint_data_at(6, dp, dlen);
+  _rel_offset = jlong_from(hi, lo);
+  return true;
+}
+
+// TODO Pack(compress) the fields of jeandle_section_word_Relocation
+bool jeandle_section_word_Relocation::pd_pack_data_to(CodeSection* dest) {
+  short* p = (short*) dest->locs_end();
+  normalize_address(_target, dest, true);
+
+  // Check whether my target address is valid within this section.
+  // If not, strengthen the relocation type to point to another section.
+  if (_section == CodeBuffer::SECT_NONE && _target != nullptr
+      && (!dest->allocates(_target) || _target == dest->locs_point())) {
+    _section = dest->outer()->section_index_of(_target);
+    relocInfo* reloc_base = dest->locs_end() - 1;
+    // Change the written type, to be section_word_type instead.
+    reloc_base->set_type(relocInfo::section_word_type);
+  }
+  CodeSection* sect = dest->outer()->code_section(_section);
+  guarantee(sect->allocates2(_target), "must be in correct section");
+  address sect_base = sect->start();
+  jlong sect_offset = _target - sect_base;
+
+  int32_t hi, lo;
+  // store _target
+  hi = high(sect_offset);
+  lo = low(sect_offset);
+  p = add_jint(p, hi);
+  p = add_jint(p, lo);
+  // store _section
+  p = add_jint(p, _section);
+  // store _offset
+  p = add_jint(p, _offset);
+  // store _rel_offset
+  hi = high(_rel_offset);
+  lo = low(_rel_offset);
+  p = add_jint(p, hi);
+  p = add_jint(p, lo);
+  dest->set_locs_end((relocInfo*) p);
+  return true;
+}
+
+bool jeandle_section_word_Relocation::pd_unpack_data() {
+  jint lo, hi;
+  int    dlen = datalen();
+  short* dp  = data();
+  // recover _target offset
+  hi = relocInfo::jint_data_at(0, dp, dlen);
+  lo = relocInfo::jint_data_at(2, dp, dlen);
+  jlong sect_offset = jlong_from(hi, lo);
+  // recover _section
+  _section = relocInfo::jint_data_at(4, dp, dlen);
+  // recover _offset
+  _offset = relocInfo::jint_data_at(6, dp, dlen);
+  // compute _target
+  _target = sect_offset + binding()->section_start(_section);
+  // recover _rel_offset
+  hi = relocInfo::jint_data_at(8, dp, dlen);
+  lo = relocInfo::jint_data_at(10, dp, dlen);
+  _rel_offset = jlong_from(hi, lo);
+  return true;
+}

@@ -31,9 +31,6 @@
     return RelocationHolder::construct<jeandle_oop_addr_Relocation>(oop_index, rel_offset);
   }
 
-  void pack_data_to(CodeSection* dest) override;
-  void unpack_data() override;
-
   int64_t rel_offset() { return _rel_offset; }
 
  private:

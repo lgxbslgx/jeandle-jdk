@@ -225,3 +225,27 @@ void trampoline_stub_Relocation::pd_fix_owner_after_move() {
 void jeandle_oop_addr_Relocation::fix_relocation_after_move(const CodeBuffer* src, CodeBuffer* dest) {
   Unimplemented();
 }
+
+bool jeandle_oop_Relocation::pd_pack_data_to(CodeSection* dest) {
+  return false;
+}
+
+bool jeandle_oop_Relocation::pd_unpack_data() {
+  return false;
+}
+
+bool jeandle_oop_addr_Relocation::pd_pack_data_to(CodeSection* dest) {
+  return false;
+}
+
+bool jeandle_oop_addr_Relocation::pd_unpack_data() {
+  return false;
+}
+
+bool jeandle_section_word_Relocation::pd_pack_data_to(CodeSection* dest) {
+  return false;
+}
+
+bool jeandle_section_word_Relocation::pd_unpack_data() {
+  return false;
+}

@@ -1067,6 +1067,12 @@ class jeandle_oop_Relocation : public oop_Relocation {
     verify_value(reinterpret_cast<address>(oop_addr()));
   }
 
+  void pack_data_to(CodeSection* dest) override;
+  void unpack_data() override;
+
+  bool pd_pack_data_to(CodeSection* dest);
+  bool pd_unpack_data();
+
  private:
   jeandle_oop_Relocation(int oop_index, int offset)
     : oop_Relocation(oop_index, offset, relocInfo::jeandle_oop_type) {}
@@ -1095,6 +1101,12 @@ class jeandle_oop_addr_Relocation : public oop_Relocation {
   }
 
   void fix_relocation_after_move(const CodeBuffer* src, CodeBuffer* dest) override;
+
+  void pack_data_to(CodeSection* dest) override;
+  void unpack_data() override;
+
+  bool pd_pack_data_to(CodeSection* dest);
+  bool pd_unpack_data();
 
  private:
   jeandle_oop_addr_Relocation(int oop_index)
@@ -1529,6 +1541,9 @@ class jeandle_section_word_Relocation : public section_word_Relocation {
   void unpack_data() override;
 
   int offset() override { return _offset; }
+
+  bool pd_pack_data_to(CodeSection* dest);
+  bool pd_unpack_data();
 
  private:
   friend class RelocationHolder;
