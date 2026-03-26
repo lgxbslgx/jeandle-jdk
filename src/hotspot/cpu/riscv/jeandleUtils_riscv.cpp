@@ -30,7 +30,7 @@ void JeandleFuncSig::setup_description(llvm::Function* func, bool is_stub) {
   func->setGC(llvm::jeandle::JeandleGC);
 
   // RISCV must enable extensions manually.
-  func->addFnAttr("target-features", "+i,+m,+forced-atomics,+a,+f,+d");
+  func->addFnAttr("target-features", "+i,+m,+a,+f,+d");
 
   if (!is_stub) {
     llvm::GlobalVariable* personality_func = func->getParent()->getGlobalVariable("jeandle.personality");
