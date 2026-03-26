@@ -18,8 +18,6 @@
  *
  */
 
-#include "jeandle/__llvmHeadersBegin__.hpp"
-
 #include "jeandle/jeandleCompiledCall.hpp"
 
 #include "jeandle/__hotspotHeadersBegin__.hpp"

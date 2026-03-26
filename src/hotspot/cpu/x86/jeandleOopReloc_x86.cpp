@@ -22,8 +22,6 @@
  *
  */
 
-#include "jeandle/__llvmHeadersBegin__.hpp"
-
 #include "jeandle/jeandleAssembler.hpp"
 #include "jeandle/jeandleReloc.hpp"
 

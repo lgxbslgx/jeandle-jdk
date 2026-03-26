@@ -18,16 +18,10 @@
  *
  */
 
-
-#include "jeandle/__llvmHeadersBegin__.hpp"
-#include "llvm/BinaryFormat/Dwarf.h"
-
 #include "jeandle/jeandleAssembler.hpp"
 #include "jeandle/jeandleCompiledCode.hpp"
 #include "jeandle/jeandleCompilation.hpp"
-#include "jeandle/jeandleRegister.hpp"
 #include "jeandle/jeandleReloc.hpp"
-#include "jeandle/jeandleRuntimeRoutine.hpp"
 
 // Get the frame size from .stack_sizes section.
 void JeandleCompiledCode::setup_frame_size() {

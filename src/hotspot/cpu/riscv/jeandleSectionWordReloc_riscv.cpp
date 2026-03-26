@@ -24,10 +24,8 @@
 
 #include "jeandle/__llvmHeadersBegin__.hpp"
 #include "llvm/ExecutionEngine/JITLink/riscv.h"
-#include "llvm/Object/FaultMapParser.h"
 
 #include "jeandle/jeandleAssembler.hpp"
-#include "jeandle/jeandleRuntimeRoutine.hpp"
 #include "jeandle/jeandleReloc.hpp"
 
 bool JeandleSectionWordReloc::pd_emit_reloc(JeandleAssembler& assembler) {

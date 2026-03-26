@@ -24,7 +24,6 @@
 #include "jeandle/jeandleAssembler.hpp"
 #include "jeandle/jeandleCompiledCode.hpp"
 #include "jeandle/jeandleCompilation.hpp"
-#include "jeandle/jeandleRegister.hpp"
 #include "jeandle/jeandleReloc.hpp"
 #include "jeandle/jeandleRuntimeRoutine.hpp"
 
